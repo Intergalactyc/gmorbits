@@ -1,4 +1,9 @@
 *.log
+*.csv
+*.mp4
+*.gif
+*.mov
+*.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
