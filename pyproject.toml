@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orbits"
+version = "1.0.0"
+dependencies = [
+  "matplotlib",
+  "numpy",
+  "scipy"
+]
+requires-python = ">=3.11"
+authors = [
+  {name = "Elliott Walker", email = "walker.elliott.j@gmail.com"}
+]
+description = "Symplectic integration applied to orbits of particle around different static potentials - project for Geometric Mechanics"
+readme = "README.md"
+classifiers = [
+  "Programming Language :: Python"
+]
