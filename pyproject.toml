@@ -19,3 +19,6 @@ readme = "README.md"
 classifiers = [
   "Programming Language :: Python"
 ]
+
+[tool.setuptools.packages.find]
+include = ["gmorbits", "gmorbits.*"]
