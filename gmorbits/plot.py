@@ -1,108 +1,141 @@
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.collections import LineCollection
 import numpy as np
 import os
 
 
-def plot_result(result, dim: int = 2, saveto: os.PathLike = None):
+def animate_orbit(
+    t,
+    x,
+    *,
+    trails: bool = True,
+    track: bool = False,
+    track_index: int = 0,
+    particle_color=(1, 0, 0),
+    trail_length: int = None,
+    fade_length: int = 100,
+    min_alpha: float = 0.25,
+    trail_color=(0, 0, 1),
+    min_frame_delay: int = 25,
+):
+    m, n, _ = x.shape
+
+    fig, ax = plt.subplots()
+
+    if trail_length is None:
+        trail_length = m + 1
+
+    if track:
+        relative = x[:, track_index, :][:, np.newaxis, :]
+        positions = x - relative
+    else:
+        positions = x
+
+    scat = ax.scatter(
+        positions[0, :, 0],
+        positions[0, :, 1],
+        s=50,
+        zorder=3,
+        c=[particle_color for _ in range(n)],
+    )
+    if trails:
+        _trails = []
+        for _ in range(n):
+            lc = LineCollection([], lw=2)
+            ax.add_collection(lc)
+            _trails.append(lc)
+
+    ax.set_xlim(positions[:, :, 0].min() - 0.1, positions[:, :, 0].max() + 0.1)
+    ax.set_ylim(positions[:, :, 1].min() - 0.1, positions[:, :, 1].max() + 0.1)
+
+    def update(frame):
+        scat.set_offsets(positions[frame])
+
+        if trails:
+            start = max(0, frame - trail_length + 1)
+            for i, lc in enumerate(_trails):
+                pts = positions[start : frame + 1, i, :]
+                if len(pts) < 2:
+                    lc.set_segments([])
+                    continue
+
+                segments = np.stack([pts[:-1], pts[1:]], axis=1)
+                n_seg = len(segments)
+
+                alphas = np.full(n_seg, min_alpha)
+                fade_len = min(fade_length, n_seg)
+                if fade_len > 0:
+                    alphas[-fade_len:] = np.linspace(min_alpha, 1.0, fade_len)
+
+                colors = np.zeros((n_seg, 4))
+                colors[:, :3] = trail_color
+                colors[:, 3] = alphas
+
+                lc.set_segments(segments)
+                lc.set_colors(colors)
+
+        ax.set_title(f"Time = {t[frame]:.2f}")
+
+        return (scat, *_trails) if trails else (scat,)
+
+    anim = FuncAnimation(fig, update, frames=m, interval=min_frame_delay, blit=False)
+
+    plt.show()
+
+    return anim
+
+
+def plot_energies(t, T, U):
+    E = T + U
+
+    fig, ax = plt.subplots()
+    ax.plot(t, T, label="Kinetic energy")
+    ax.plot(t, U, label="Potential energy")
+    ax.plot(t, E, label="Total energy")
+    ax.legend()
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Energy")
+    ax.set_title("Total energy over time")
+
+    plt.show()
+
+
+def plot_angular_momentum(t, L):
+    fig, ax = plt.subplots()
+    if (Ldim := L.shape[1]) == 1:
+        ax.plot(t, L[:, 0])
+    elif Ldim == 3:
+        ax.plot(t, L[:, 0], label="Lx")
+        ax.plot(t, L[:, 1], label="Ly")
+        ax.plot(t, L[:, 2], label="Lz")
+        ax.legend()
+    else:
+        raise Exception(f"Unrecognized shape of L (Ldim {Ldim})")
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Angular Momentum")
+    ax.set_title("Total angular momentum over time")
+
+    plt.show()
+
+
+def plot_result(
+    result,
+    dim: int = 2,
+    saveto: os.PathLike = None,
+    *,
+    trails: str | bool = "auto",
+    **kwargs,
+):
     assert dim in {2, 3}, "Dimension must be 2 or 3"
 
     t, x, v, T, U, L = result
 
-    Ln = np.apply_along_axis(np.linalg.norm, 1, L)
+    if isinstance(trails, str) and trails.lower() == "auto":
+        trails = x.shape[1] < 4
 
-    fig = plt.figure(figsize=(12, 10))
-    if dim == 3:
-        ax = fig.add_subplot(2, 2, (1, 2), projection="3d")
-    else:
-        ax = fig.add_subplot(2, 2, (1, 2))
-    eax = fig.add_subplot(2, 2, 3)
-    lax = fig.add_subplot(2, 2, 4)
-
-    xlow, ylow, zlow = np.min(x[:, :], axis=0)
-    xhigh, yhigh, zhigh = np.max(x[:, :], axis=0)
-
-    padx = max(0.1 * (xhigh - xlow), 1e-1)
-    ax.set_xlim(xlow - padx, xhigh + padx)
-    pady = max(0.1 * (yhigh - ylow), 1e-1)
-    ax.set_ylim(ylow - pady, yhigh + pady)
-
-    tlow = np.min(t)
-    thigh = np.max(t)
-
-    Elow = np.min(U)
-    Ehigh = np.max(T)
-    padE = max(0.1 * (Ehigh - Elow), 1e-2)
-    eax.set_xlim(tlow, thigh)
-    eax.set_ylim(Elow - padE, Ehigh + padE)
-
-    Llow = np.min(Ln)
-    Lhigh = np.max(Ln)
-    padL = max(0.1 * (Lhigh - Llow), 1e-5)
-    lax.set_xlim(tlow, thigh)
-    lax.set_ylim(Llow - padL, Lhigh + padL)
-
-    if dim == 3:
-        padz = max(0.1 * (zhigh - zlow), 0.1)
-        ax.set_zlim(zlow - padz, zhigh + padz)
-        ax.set_zlabel("Z")
-        (trail,) = ax.plot([], [], [], "--", lw=1, color="tab:blue")
-        (point,) = ax.plot([], [], [], "o", markersize=8, color="tab:red")
-    else:
-        (trail,) = ax.plot([], [], "--", lw=1, color="tab:blue")
-        (point,) = ax.plot([], [], "o", markersize=8, color="tab:red")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-
-    (Tplot,) = eax.plot([], [], "--", lw=1, color="tab:blue", label="Kinetic Energy")
-    (Uplot,) = eax.plot([], [], "--", lw=1, color="tab:green", label="Potential Energy")
-    (Eplot,) = eax.plot([], [], "-", lw=2, color="tab:red", label="Total Energy")
-    eax.legend()
-    eax.set_xlabel("Time")
-    eax.set_ylabel("Specific Energy")
-
-    (Lplot,) = lax.plot(
-        [], [], "-", lw=3, color="tab:red", label="||Angular Momentum||"
-    )
-    lax.legend()
-    lax.set_xlabel("Time")
-    lax.set_ylabel("Specific Angular Momentum Norm")
-
-    def init():
-        for p in [trail, point, Tplot, Uplot, Eplot, Lplot]:
-            p.set_data([], [])
-
-        if dim == 3:
-            trail.set_3d_properties([])
-            point.set_3d_properties([])
-
-        return trail, point, Tplot
-
-    def update(frame):
-        trail.set_data(x[:frame, 0], x[:frame, 1])
-        point.set_data([x[frame, 0]], [x[frame, 1]])
-        Tplot.set_data(t[:frame], T[:frame])
-        Uplot.set_data(t[:frame], U[:frame])
-        Eplot.set_data(t[:frame], T[:frame] + U[:frame])
-        Lplot.set_data(t[:frame], Ln[:frame])
-
-        if dim == 3:
-            point.set_3d_properties([x[frame, 2]])
-            trail.set_3d_properties(x[:frame, 2])
-
-        return trail, point, Tplot
-
-    fig.tight_layout()
-
-    ani = FuncAnimation(
-        fig,
-        update,
-        frames=x.shape[0],
-        init_func=init,
-        interval=10,
-        repeat=False,
-    )
-
-    plt.show()
-    if saveto:
-        ani.save("animation.mp4", fps=30, dpi=150)
+    animate_orbit(t, x, trails=trails, **kwargs)
+    plot_energies(t, T, U)
+    plot_angular_momentum(t, L)
