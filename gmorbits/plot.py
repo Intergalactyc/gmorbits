@@ -130,8 +130,8 @@ def plot_twoform(t, w):
 
     w /= _EPSILON**2
 
-    werr = np.abs(w - w[0])
-    plt.plot(t[:-1], werr)
+    # werr = np.abs(w - w[0])
+    plt.plot(t, w)
 
     plt.show()
 

@@ -189,11 +189,13 @@ class Integrator(ABC):
             I = np.eye(n)
             J = np.block([[np.zeros((n, n)), I], [-I, np.zeros((n, n))]])
             # initial perturbations in canonical coordinates (q,p)
-            eps_rel = _EPSILON
-            # we'll set eps later after we form z
+            eps = _EPSILON  # could be better if we actually make eps dependent on z (as the perturbation should take into account the scale of z)
             delta1 = np.zeros(2 * n)
             delta2 = np.zeros(2 * n)
-            ws = np.zeros(Nt)
+            delta1[0] = eps
+            delta2[n] = eps
+            ws = np.zeros(Nt + 1)
+            ws[0] = delta1 @ (J @ delta2)
         else:
             ws = None
 
@@ -233,17 +235,8 @@ class Integrator(ABC):
                     [x.ravel(), p]
                 )  # z corresponds to the state we linearize about
 
-                # set eps scaled to state size if not set
-                state_scale = max(1.0, np.linalg.norm(z))
-                eps = eps_rel * state_scale
-
-                # initialize on first step if zeros
-                if np.all(delta1 == 0):
-                    delta1[0] = eps
-                    delta2[n] = eps
-
                 # apply integrator to a canonical z (q,p) -> returns canonical z'=(q',p')
-                def Phi_of_z(z_can):
+                def Psi_of_z(z_can):
                     q_p = z_can[:n].reshape(count, self.dim)
                     p_p = z_can[n:].copy()
                     # convert p back to v for integrator call
@@ -256,21 +249,17 @@ class Integrator(ABC):
                 def push_forward_central(delta):
                     z_plus = z + delta
                     z_minus = z - delta
-                    Phi_plus = Phi_of_z(z_plus)
-                    Phi_minus = Phi_of_z(z_minus)
-                    return 0.5 * (Phi_plus - Phi_minus)
+                    Psi_plus = Psi_of_z(z_plus)
+                    Psi_minus = Psi_of_z(z_minus)
+                    return 0.5 * (Psi_plus - Psi_minus)
 
                 # propagate deviations
-                d1_next = push_forward_central(delta1)
-                d2_next = push_forward_central(delta2)
+                delta1 = push_forward_central(delta1)
+                delta2 = push_forward_central(delta2)
 
                 # compute two-form using canonical J
-                w = d1_next @ (J @ d2_next)
-                ws[i - 1] = w
-
-                # update stored deltas for next step (represent them as deviations in canonical coords)
-                delta1 = d1_next
-                delta2 = d2_next
+                w = delta1 @ (J @ delta2)
+                ws[i] = w
 
             for j in range(count):
                 Us[i] += _mass[j] * _potential.evaluate(xs[i, j, :], j)
