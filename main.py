@@ -124,15 +124,21 @@ def trappist_1(method):
     return planet_system(method, 0.0898 * Msun, distances, masses)
 
 
+def logarithmic(method):
+    integrator2d = Integrator(method, 2)
+    _x0 = [[]]
+
+
 if __name__ == "__main__":
     # simple_circles(symplectic_euler)
+    # simple_circles(heun)
     # two_body(symplectic_euler)
     figure_eight(explicit_euler)
     figure_eight(symplectic_euler)
     figure_eight(heun)
     figure_eight(leapfrog)
     # random_bodies(symplectic_euler)
-    # trappist_1(explicit_euler)
-    # trappist_1(symplectic_euler)
-    # trappist_1(heun)
-    # trappist_1(leapfrog)
+    trappist_1(explicit_euler)
+    trappist_1(symplectic_euler)
+    trappist_1(heun)
+    trappist_1(leapfrog)
