@@ -7,9 +7,7 @@ class ExplicitEulerMethod(Method):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def step(self, x, v, pot) -> tuple:
-        if (s1 := x.shape) != (s2 := v.shape):
-            raise ValueError(f"Incompatible x and v ({s1} != {s2})")
+    def _step(self, x, v, pot) -> tuple:
         x1 = x.copy()
         v1 = v.copy()
         for i in range(x.shape[0]):
@@ -31,9 +29,7 @@ class SymplecticEulerMethod(Method):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def step(self, x, v, pot) -> tuple:
-        if (s1 := x.shape) != (s2 := v.shape):
-            raise ValueError(f"Incompatible x and v ({s1} != {s2})")
+    def _step(self, x, v, pot) -> tuple:
         x1 = x.copy()
         v1 = v.copy()
         for i in range(x.shape[0]):
@@ -41,7 +37,6 @@ class SymplecticEulerMethod(Method):
             v_i = v[i, :]
             v1[i, :] = v_i - self.h * pot.gradient(x_i, i)
             x1[i, :] = x_i + self.h * v1[i, :]
-        pot.update(x1)
         return x1, v1
 
 
@@ -53,9 +48,7 @@ class HeunMethod(Method):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def step(self, x, v, pot) -> tuple:
-        if (s1 := x.shape) != (s2 := v.shape):
-            raise ValueError(f"Incompatible x and v ({s1} != {s2})")
+    def _step(self, x, v, pot) -> tuple:
         xtilde = x.copy()
         vtilde = v.copy()
         fs = []
@@ -70,7 +63,6 @@ class HeunMethod(Method):
         for i in range(x.shape[0]):
             x1[i, :] = x[i, :] + self.h / 2 * (v[i, :] + vtilde[i, :])
             v1[i, :] = v[i, :] - self.h / 2 * (fs[i] + pot.gradient(xtilde[i, :], i))
-        pot.update(x1)
         return x1, v1
 
 
@@ -81,9 +73,7 @@ class LeapfrogMethod(Method):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def step(self, x, v, pot) -> tuple:
-        if (s1 := x.shape) != (s2 := v.shape):
-            raise ValueError(f"Incompatible x and v ({s1} != {s2})")
+    def _step(self, x, v, pot) -> tuple:
         x1 = x.copy()
         v1 = v.copy()
         v2 = v.copy()

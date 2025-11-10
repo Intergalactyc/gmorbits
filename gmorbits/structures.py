@@ -1,5 +1,6 @@
 import numpy as np
 from abc import ABC, abstractmethod
+from gmorbits.constants import _EPSILON
 from gmorbits.plot import plot_result as _plot_result
 import os
 from tqdm import tqdm
@@ -34,37 +35,6 @@ class Potential(ABC):
 
     def __add__(self, other):
         return _SumPotential(self, other)
-
-    def plot_gradient_2d(self, ax, xmin, xmax, ymin, ymax, points_per=10, tolerance=50):
-        pass
-
-    def plot_gradient_3d(
-        self, ax, xmin, xmax, ymin, ymax, zmin, zmax, points_per=8, tolerance=50
-    ):
-        # ax must have projection="3d"
-        posgrid = np.meshgrid(
-            np.linspace(xmin, xmax, points_per),
-            np.linspace(ymin, ymax, points_per),
-            np.linspace(zmin, zmax, points_per),
-        )
-        gradfield = -np.apply_along_axis(self.gradient, 0, posgrid)
-        grad_sizes = np.apply_along_axis(np.linalg.norm, 0, gradfield)
-        scale_factor = np.median(grad_sizes)
-        # print(scale_factor)
-
-        def rescale(x):
-            s = x * 8 / scale_factor
-            if np.linalg.norm(s) > tolerance:
-                return np.array([0.0, 0.0, 0.0])
-            return s
-
-        gradfield = np.apply_along_axis(rescale, 0, gradfield)
-        # gradfield = rescale(gradfield)
-        ax.quiver(*posgrid, *gradfield, length=0.1)
-
-    def plot_contour_2d(self, ax, xmin, xmax, y0, zmin, zmax):
-        # 2d contour plot for cross-section y = y0
-        pass
 
 
 class _SumPotential(Potential):
@@ -141,8 +111,15 @@ class Method(ABC):
     def __init__(self, h: float):
         self.h = h
 
-    @abstractmethod
     def step(self, x, v, pot: Potential) -> tuple:
+        if (s1 := x.shape) != (s2 := v.shape):
+            raise ValueError(f"Incompatible x and v ({s1} != {s2})")
+        pot.update(x)
+        x_new, v_new = self._step(x, v, pot)
+        return x_new, v_new
+
+    @abstractmethod
+    def _step(self, x, v, pot: Potential) -> tuple:
         # x, v: count x dim matrices
         # Relevant: -pot.gradient(), pot.update(xi)
         # Update pot object (to use updated x) and return updated values of x and v
@@ -167,6 +144,7 @@ class Integrator(ABC):
         mass: float | list[float],
         potential: Potential | list[Potential],
         static: bool,
+        twoform: bool = True,
         name: str = None,
         progress_bar: bool = True,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -205,6 +183,20 @@ class Integrator(ABC):
         Nt = int(tf / self.method.h)
         times = np.arange(0, Nt + 1) * self.method.h
 
+        if twoform:
+            n = self.dim * count  # n = 2N
+            # canonical J for (q,p)
+            I = np.eye(n)
+            J = np.block([[np.zeros((n, n)), I], [-I, np.zeros((n, n))]])
+            # initial perturbations in canonical coordinates (q,p)
+            eps_rel = _EPSILON
+            # we'll set eps later after we form z
+            delta1 = np.zeros(2 * n)
+            delta2 = np.zeros(2 * n)
+            ws = np.zeros(Nt)
+        else:
+            ws = None
+
         xs = np.concatenate(
             [x0[np.newaxis, :, :], np.zeros([Nt, count, self.dim])], axis=0
         )
@@ -226,9 +218,60 @@ class Integrator(ABC):
         if progress_bar:
             iterator = tqdm(iterator)
         for i in iterator:
-            xs[i, :, :], vs[i, :, :] = self.method.step(
-                xs[i - 1, :, :], vs[i - 1, :, :], _potential
-            )
+            x = xs[i - 1, :, :]
+            v = vs[i - 1, :, :]
+
+            x_new, v_new = self.method.step(x, v, _potential)
+
+            xs[i, :, :], vs[i, :, :] = x_new, v_new
+
+            if twoform:
+                # build canonical z = (q, p) where p = m * v
+                m_diag = np.repeat(_mass, self.dim)
+                p = v.ravel() * m_diag  # p at current state (before step)
+                z = np.concatenate(
+                    [x.ravel(), p]
+                )  # z corresponds to the state we linearize about
+
+                # set eps scaled to state size if not set
+                state_scale = max(1.0, np.linalg.norm(z))
+                eps = eps_rel * state_scale
+
+                # initialize on first step if zeros
+                if np.all(delta1 == 0):
+                    delta1[0] = eps
+                    delta2[n] = eps
+
+                # apply integrator to a canonical z (q,p) -> returns canonical z'=(q',p')
+                def Phi_of_z(z_can):
+                    q_p = z_can[:n].reshape(count, self.dim)
+                    p_p = z_can[n:].copy()
+                    # convert p back to v for integrator call
+                    v_p = (p_p / m_diag).reshape(count, self.dim)
+                    x_pf, v_pf = self.method.step(q_p, v_p, _potential)
+                    p_pf = v_pf.ravel() * m_diag
+                    return np.concatenate([x_pf.ravel(), p_pf])
+
+                # central finite difference push-forward
+                def push_forward_central(delta):
+                    z_plus = z + delta
+                    z_minus = z - delta
+                    Phi_plus = Phi_of_z(z_plus)
+                    Phi_minus = Phi_of_z(z_minus)
+                    return 0.5 * (Phi_plus - Phi_minus)
+
+                # propagate deviations
+                d1_next = push_forward_central(delta1)
+                d2_next = push_forward_central(delta2)
+
+                # compute two-form using canonical J
+                w = d1_next @ (J @ d2_next)
+                ws[i - 1] = w
+
+                # update stored deltas for next step (represent them as deviations in canonical coords)
+                delta1 = d1_next
+                delta2 = d2_next
+
             for j in range(count):
                 Us[i] += _mass[j] * _potential.evaluate(xs[i, j, :], j)
                 Ts[i] += _mass[j] * np.dot(vs[i, j, :], vs[i, j, :])
@@ -242,7 +285,7 @@ class Integrator(ABC):
                 count += 1
             name = nn
 
-        self._results[name] = (times, xs, vs, Ts, Us, Ls)
+        self._results[name] = (times, xs, vs, Ts, Us, Ls, ws)
         self._latest = name
 
     def plot_result(self, which=None, saveto: os.PathLike = None, *args, **kwargs):
@@ -253,15 +296,3 @@ class Integrator(ABC):
             raise Exception("Integrator has not been run")
 
         _plot_result(res, self.dim, saveto, *args, **kwargs)
-
-    def save_result(self, which=None):
-        if which is None:
-            which = self._latest
-        if isinstance(which, list):
-            for k in which:
-                self.save_result(k)
-        if isinstance(which, str) and which.lower() == "all":
-            for k in self._results.keys():
-                self.save_result(k)
-
-        # do something

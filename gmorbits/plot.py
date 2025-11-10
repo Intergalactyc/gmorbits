@@ -3,12 +3,14 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.collections import LineCollection
 import numpy as np
 import os
+from gmorbits.constants import _EPSILON
 
 
 def animate_orbit(
     t,
     x,
     *,
+    stride: int = 5,
     trails: bool = True,
     track: bool = False,
     track_index: int = 0,
@@ -19,6 +21,10 @@ def animate_orbit(
     trail_color=(0, 0, 1),
     min_frame_delay: int = 25,
 ):
+    # apply frame skipping
+    t = t[::stride]
+    x = x[::stride]
+
     m, n, _ = x.shape
 
     fig, ax = plt.subplots()
@@ -39,6 +45,7 @@ def animate_orbit(
         zorder=3,
         c=[particle_color for _ in range(n)],
     )
+
     if trails:
         _trails = []
         for _ in range(n):
@@ -76,13 +83,10 @@ def animate_orbit(
                 lc.set_colors(colors)
 
         ax.set_title(f"Time = {t[frame]:.2f}")
-
         return (scat, *_trails) if trails else (scat,)
 
     anim = FuncAnimation(fig, update, frames=m, interval=min_frame_delay, blit=False)
-
     plt.show()
-
     return anim
 
 
@@ -121,6 +125,17 @@ def plot_angular_momentum(t, L):
     plt.show()
 
 
+def plot_twoform(t, w):
+    fig, ax = plt.subplots()
+
+    w /= _EPSILON**2
+
+    werr = np.abs(w - w[0])
+    plt.plot(t[:-1], werr)
+
+    plt.show()
+
+
 def plot_result(
     result,
     dim: int = 2,
@@ -131,11 +146,14 @@ def plot_result(
 ):
     assert dim in {2, 3}, "Dimension must be 2 or 3"
 
-    t, x, v, T, U, L = result
+    t, x, v, T, U, L, w = result
 
     if isinstance(trails, str) and trails.lower() == "auto":
         trails = x.shape[1] < 4
 
-    animate_orbit(t, x, trails=trails, **kwargs)
-    plot_energies(t, T, U)
-    plot_angular_momentum(t, L)
+    # animate_orbit(t, x, trails=trails, **kwargs)
+    # plot_energies(t, T, U)
+    # plot_angular_momentum(t, L)
+    if w is not None:
+        print(w)
+        plot_twoform(t, w)
