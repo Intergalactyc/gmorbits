@@ -77,14 +77,20 @@ class LogarithmicPotential(Potential):
     # Density rho = rho_0 * (r/r_0)^-2 (power law density with alpha = 2)
     def __init__(self, rho_0, r_0, dim: int, center=None):
         self.K = 4 * np.pi * G * rho_0 * r_0 * r_0
+        self.rho0 = rho_0
+        self.r0 = r_0
         self.logr0 = np.log(r_0)
+        self.vc = np.sqrt(4 * np.pi * G * self.rho0) * self.r0
         super().__init__(dim, center)
 
     def _evaluate(self, x, *args, **kwargs):
-        return self.K * (np.log(np.linalg.norm(x)) - self.logr0)
+        return self.K * (np.log(np.linalg.norm(x)))
 
     def _gradient(self, x, *args, **kwargs):
         return self.K / np.dot(x, x) * x
+
+    def vc(self, r):
+        return self.vc
 
 
 class HernquistPotential(Potential):

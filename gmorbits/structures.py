@@ -186,8 +186,9 @@ class Integrator(ABC):
         if twoform:
             n = self.dim * count  # n = 2N
             # canonical J for (q,p)
-            I = np.eye(n)
-            J = np.block([[np.zeros((n, n)), I], [-I, np.zeros((n, n))]])
+            J = np.block(
+                [[np.zeros((n, n)), np.eye(n)], [-np.eye(n), np.zeros((n, n))]]
+            )
             # initial perturbations in canonical coordinates (q,p)
             eps = _EPSILON  # could be better if we actually make eps dependent on z (as the perturbation should take into account the scale of z)
             delta1 = np.zeros(2 * n)
@@ -211,7 +212,7 @@ class Integrator(ABC):
 
         for j in range(count):
             Us[0] += _mass[j] * _potential.evaluate(xs[0, j, :], j)
-            Ts[0] += _mass[j] * np.dot(vs[0, j, :], vs[0, j, :])
+            Ts[0] += 0.5 * _mass[j] * np.dot(vs[0, j, :], vs[0, j, :])
             Ls[0, :] += _mass[j] * specific_angular_momentum(
                 xs[0, j, :], vs[0, j, :], dim=self.dim
             )
@@ -263,7 +264,7 @@ class Integrator(ABC):
 
             for j in range(count):
                 Us[i] += _mass[j] * _potential.evaluate(xs[i, j, :], j)
-                Ts[i] += _mass[j] * np.dot(vs[i, j, :], vs[i, j, :])
+                Ts[i] += 0.5 * _mass[j] * np.dot(vs[i, j, :], vs[i, j, :])
                 Ls[i, :] += _mass[j] * specific_angular_momentum(
                     xs[i, j, :], vs[i, j, :], dim=self.dim
                 )
@@ -274,8 +275,11 @@ class Integrator(ABC):
                 count += 1
             name = nn
 
-        self._results[name] = (times, xs, vs, Ts, Us, Ls, ws)
+        result = (times, xs, vs, Ts, Us, Ls, ws)
+        self._results[name] = result
         self._latest = name
+
+        return result
 
     def plot_result(self, which=None, saveto: os.PathLike = None, *args, **kwargs):
         if which is None:

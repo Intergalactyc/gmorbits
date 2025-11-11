@@ -6,11 +6,16 @@ import os
 from gmorbits.constants import _EPSILON
 
 
+_n = "\n"
+
+
 def animate_orbit(
     t,
     x,
+    title: str = "",
+    saveto: os.PathLike = None,
     *,
-    stride: int = 5,
+    stride: int = 3,
     trails: bool = True,
     track: bool = False,
     track_index: int = 0,
@@ -82,15 +87,24 @@ def animate_orbit(
                 lc.set_segments(segments)
                 lc.set_colors(colors)
 
-        ax.set_title(f"Time = {t[frame]:.2f}")
+        ax.set_title(f"{title}{_n if title else ''}Time = {t[frame]:.2f}")
         return (scat, *_trails) if trails else (scat,)
 
     anim = FuncAnimation(fig, update, frames=m, interval=min_frame_delay, blit=False)
-    plt.show()
-    return anim
+
+    if saveto:
+        anim.save(
+            filename=saveto,
+            writer="pillow",
+            fps=len(t) / (t[-1] - t[0]),
+            # progress_callback=lambda i, n: print(f"Saving frame {i}/{n}"),
+        )
+        plt.close()
+    else:
+        plt.show()
 
 
-def plot_energies(t, T, U):
+def plot_energies(t, T, U, title: str = "", saveto: os.PathLike = None):
     E = T + U
 
     fig, ax = plt.subplots()
@@ -101,12 +115,18 @@ def plot_energies(t, T, U):
 
     ax.set_xlabel("Time")
     ax.set_ylabel("Energy")
-    ax.set_title("Total energy over time")
+    ax.set_title(f"{title}{_n if title else ''}Total energy over time")
 
-    plt.show()
+    fig.tight_layout()
+
+    if saveto:
+        plt.savefig(saveto, bbox_inches="tight")
+        plt.close()
+    else:
+        plt.show()
 
 
-def plot_angular_momentum(t, L):
+def plot_angular_momentum(t, L, title: str = "", saveto: os.PathLike = None):
     fig, ax = plt.subplots()
     if (Ldim := L.shape[1]) == 1:
         ax.plot(t, L[:, 0])
@@ -120,26 +140,45 @@ def plot_angular_momentum(t, L):
 
     ax.set_xlabel("Time")
     ax.set_ylabel("Angular Momentum")
-    ax.set_title("Total angular momentum over time")
+    ax.set_title(f"{title}{_n if title else ''}Total angular momentum over time")
 
-    plt.show()
+    if saveto:
+        plt.savefig(saveto, bbox_inches="tight")
+        plt.close()
+    else:
+        plt.show()
 
 
-def plot_twoform(t, w):
+def plot_twoform(t, w, title: str = "", saveto: os.PathLike = None):
     fig, ax = plt.subplots()
 
-    w /= _EPSILON**2
+    _w = w / _EPSILON**2
 
-    # werr = np.abs(w - w[0])
-    plt.plot(t, w)
+    # werr = np.abs(_w - _w[0])
+    ax.plot(t, _w, label=r"$\omega(\delta_1,\delta_2)$")
+    # ax.plot(t, werr, label="absolute error")
 
-    plt.show()
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Two-form, normalized to initial value of 1")
+    ax.set_title(
+        f"{title}{_n if title else ''}Symplectic two-form of propagated pair of vectors over time"
+    )
+
+    ax.legend()
+
+    if saveto:
+        plt.savefig(saveto, bbox_inches="tight")
+        plt.close()
+    else:
+        plt.show()
 
 
 def plot_result(
     result,
+    cname: str = None,
+    mname: str = None,
+    dirpath: os.PathLike = None,
     dim: int = 2,
-    saveto: os.PathLike = None,
     *,
     trails: str | bool = "auto",
     **kwargs,
@@ -148,12 +187,21 @@ def plot_result(
 
     t, x, v, T, U, L, w = result
 
+    if dirpath is not None:
+        subdir = os.path.join(dirpath, f"{cname.lower().replace(' ', '_')}")
+        os.makedirs(subdir, exist_ok=True)
+
+    def fpath(name):
+        if dirpath is None:
+            return None
+        return os.path.join(subdir, f"{mname.lower().replace(' ', '_')}-{name}")
+
     if isinstance(trails, str) and trails.lower() == "auto":
         trails = x.shape[1] < 4
 
-    # animate_orbit(t, x, trails=trails, **kwargs)
-    # plot_energies(t, T, U)
-    # plot_angular_momentum(t, L)
+    title = f"{cname}: {mname}"
+    animate_orbit(t, x, saveto=fpath("orbit.gif"), trails=trails, **kwargs)
+    plot_energies(t, T, U, title, fpath("energies.png"))
+    plot_angular_momentum(t, L, title, fpath("angularMomentum.png"))
     if w is not None:
-        print(w)
-        plot_twoform(t, w)
+        plot_twoform(t, w, title, fpath("2form.png"))
